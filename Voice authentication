@@ -1,0 +1,76 @@
+import librosa
+import numpy as np
+import sounddevice as sd
+import matplotlib.pyplot as plt
+
+# Load audio files
+speaker1, fs1 = librosa.load('speaker1.wav')
+speaker2, fs2 = librosa.load('speaker2.wav')
+speaker3, fs3 = librosa.load('speaker3.wav')
+
+# Record user input
+duration = 5  # record for 5 seconds
+print("Please speak into the microphone...")
+recording = sd.rec(int(duration * fs1), samplerate=fs1, channels=1)
+sd.wait()
+
+# Convert user input to mono and normalize
+input_audio = np.squeeze(recording)
+input_audio = librosa.util.normalize(input_audio)
+
+# Calculate FFT for audio files
+nfft = 2 ** 18  # Use 262,144 samples for FFT calculation
+speaker1_fft = np.abs(np.fft.rfft(speaker1, nfft))
+speaker2_fft = np.abs(np.fft.rfft(speaker2, nfft))
+speaker3_fft = np.abs(np.fft.rfft(speaker3, nfft))
+
+# Calculate FFT for input audio
+input_fft = np.abs(np.fft.rfft(input_audio, nfft))
+
+# Calculate normalized cross-correlation (NCC) between input audio and each speaker
+ncc1 = np.sum(input_fft * speaker1_fft) / (np.linalg.norm(input_fft) * np.linalg.norm(speaker1_fft))
+ncc2 = np.sum(input_fft * speaker2_fft) / (np.linalg.norm(input_fft) * np.linalg.norm(speaker2_fft))
+ncc3 = np.sum(input_fft * speaker3_fft) / (np.linalg.norm(input_fft) * np.linalg.norm(speaker3_fft))
+
+# Determine which speaker has the highest NCC value
+if ncc1 > ncc2 and ncc1 > ncc3 and ncc1 > 0.5:
+    print("Matched with speaker1")
+    matched_speaker = speaker1_fft
+elif ncc2 > ncc1 and ncc2 > ncc3 and ncc2 > 0.5:
+    print("Matched with speaker2")
+    matched_speaker = speaker2_fft
+elif ncc3 > ncc1 and ncc3 > ncc2 and ncc3 > 0.5:
+    print("Matched with speaker3")
+    matched_speaker = speaker3_fft
+else:
+    print("Not matched, please try again!")
+
+
+# Calculate frequency of output
+output_freq = np.fft.rfftfreq(nfft, 1 / fs1)
+
+# Plot FFT for audio files and input audio
+fig, axs = plt.subplots(3, 1, figsize=(8, 8))
+fig.suptitle('Audio analysis')
+
+axs[0].plot(np.fft.rfftfreq(nfft, 1 / fs1), np.abs(speaker1_fft), label='Speaker 1')
+axs[0].plot(np.fft.rfftfreq(nfft, 1 / fs2), np.abs(speaker2_fft), label='Speaker 2')
+axs[0].plot(np.fft.rfftfreq(nfft, 1 / fs3), np.abs(speaker3_fft), label='Speaker 3')
+axs[0].set_title('FFT of audio files')
+axs[0].set_xlabel('Frequency (Hz)')
+axs[0].set_ylabel('Magnitude')
+axs[0].legend()
+
+axs[1].plot(np.fft.rfftfreq(nfft, 1 / fs1), np.abs(input_fft), label='User input')
+axs[1].set_title('FFT of user input')
+axs[1].set_xlabel('Frequency (Hz)')
+axs[1].set_ylabel('Magnitude')
+axs[1].legend()
+
+# Plot spectrogram for matched speaker
+matched_speaker_spec = librosa.stft(matched_speaker, n_fft=nfft, hop_length=nfft // 2)
+matched_speaker_spec_db = librosa.amplitude_to_db(np.abs(matched_speaker_spec), ref=np.max)
+img = librosa.display.specshow(matched_speaker_spec_db, x_axis='time', y_axis='linear', sr=fs1, hop_length=nfft // 2, ax=axs[2])
+axs[2].set_title('Spectrogram of matched speaker')
+fig.colorbar(img, ax=axs[2], format='%+2.0f dB')
+plt.show()
